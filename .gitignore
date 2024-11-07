@@ -1,0 +1,5 @@
+ECHO is on.
+# Root-level .gitignore
+**/node_modules/
+frontend/.expo/
+backend/.env
