@@ -3,3 +3,4 @@ ECHO is on.
 **/node_modules/
 frontend/.expo/
 backend/.env
+backend/firebaseServiceAccountKey.json
