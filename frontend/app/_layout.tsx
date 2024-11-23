@@ -1,9 +1,12 @@
-import { Stack } from "expo-router";
+import { Stack } from 'expo-router';
+import { NavigationContainer } from '@react-navigation/native';
 
 export default function RootLayout() {
   return (
-    <Stack>
-      <Stack.Screen name="index" />
-    </Stack>
+    <NavigationContainer>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+      </Stack>
+    </NavigationContainer>
   );
 }
