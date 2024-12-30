@@ -1,21 +1,52 @@
 import 'react-native-get-random-values';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Alert } from 'react-native';
 import React, { useEffect } from 'react';
-import { useNavigation } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
-import { BackgroundGradient } from '../../constants/globalStyles'; // Ensure the path is correct
+import { BackgroundGradient } from '../../constants/globalStyles';
 import * as Animatable from 'react-native-animatable';
+import { createTrip, addLocationToTrip } from '../utils/firebaseUtils';
 
 export default function searchFill() {
-  const navigation = useNavigation();
+  const router = useRouter();
 
-  useEffect(() => {
-    navigation.setOptions({
-      headerShown: false,
-      headerTransparent: true,
-      headerTitle: 'Search',
-    });
-  }, []);
+  const handleLocationSelect = async (data, details) => {
+    console.log("handleLocationSelect called");
+    if (!details) {
+      console.log("No details available");
+      Alert.alert("Error", "No details available for the selected location.");
+      return;
+    }
+
+    const locationData = {
+      place_id: data.place_id,
+      name: data.structured_formatting.main_text || "",
+      address: data.description || "",  // Use full description as fallback
+      latitude: details.geometry?.location?.lat || 0,
+      longitude: details.geometry?.location?.lng || 0,
+      rating: details.rating || 0,
+      user_ratings_total: details.user_ratings_total || 0,
+      types: details.types || [],
+    };
+
+    try {
+      const tripId = `trip_${Date.now()}`;
+      await createTrip(tripId, `My Trip to ${locationData.name}`);
+      await addLocationToTrip(tripId, locationData);
+
+      // Pass stringified location data
+      router.push({
+        pathname: "/tripCreation/spending",
+        params: { 
+          tripId, 
+          locationData: JSON.stringify(locationData)
+        }
+      });
+    } catch (error) {
+      console.log("Error saving location:", error.message);
+      Alert.alert("Error", error.message);
+    }
+  };
 
   return (
     <BackgroundGradient>
@@ -29,13 +60,11 @@ export default function searchFill() {
           Enter a Location
         </Animatable.Text>
         <GooglePlacesAutocomplete
-          placeholder='Search'
+          placeholder="Search"
           fetchDetails={true}
-          onPress={(data, details = null) => {
-            console.log(data, details);
-          }}
+          onPress={handleLocationSelect}
           query={{
-            key: 'AIzaSyBHd0wMM-9p5HkCoik_pLBfm6VXxtJoHi8',
+            key: process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
             language: 'en',
           }}
           styles={{
@@ -59,7 +88,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
-    color: 'black', // Ensure the text is visible on the gradient background
+    color: 'black',
     marginBottom: 20,
   },
   textInputContainer: {
