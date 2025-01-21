@@ -64,12 +64,11 @@ export default function GroupSize() {
       );
       await setDoc(locationDocRef, updatedData, { merge: true });
       
-      // Add console log to match spending.jsx
       console.log("Group size saved successfully:", updatedData);
       Alert.alert("Success", "Group size saved successfully!");
       
       router.push({
-        pathname: "/tripCreation/review",
+        pathname: "/",
         params: { 
           tripId, 
           locationData: JSON.stringify(updatedData) 
@@ -80,7 +79,7 @@ export default function GroupSize() {
       Alert.alert("Error", "Failed to save group size.");
     }
   };
-  
+
   return (
     <BackgroundGradient>
       <View style={styles.container}>
