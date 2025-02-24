@@ -5,7 +5,7 @@ import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../../config/firebaseConfig';
 import { BackgroundGradient } from '../../../constants/globalStyles';
 import { HelloWave } from '../../../components/HelloWave';
-import { createUser } from '../../utils/firebaseUtils'; // Correct import for createUser
+import { createUser } from '../../../utils/firebaseUtils'; // Correct import for createUser
 import * as Animatable from 'react-native-animatable';
 
 export default function SignIn() {
