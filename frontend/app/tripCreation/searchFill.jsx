@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import { BackgroundGradient } from '../../constants/globalStyles';
 import * as Animatable from 'react-native-animatable';
-import { createTrip, addLocationToTrip } from '../utils/firebaseUtils';
+import { createTrip, addLocationToTrip } from '../../utils/firebaseUtils';
 
 export default function searchFill() {
   const router = useRouter();
