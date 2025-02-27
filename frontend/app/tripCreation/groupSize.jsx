@@ -68,7 +68,7 @@ export default function GroupSize() {
       Alert.alert("Success", "Group size saved successfully!");
       
       router.push({
-        pathname: "/",
+        pathname: "/tripCreation/itinerary",
         params: { 
           tripId, 
           locationData: JSON.stringify(updatedData) 
