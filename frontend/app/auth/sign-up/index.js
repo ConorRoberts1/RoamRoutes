@@ -1,8 +1,10 @@
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import React, { useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, Link } from 'expo-router';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../../config/firebaseConfig';
+import { BackgroundGradient } from '../../../constants/globalStyles';
+import * as Animatable from 'react-native-animatable';
 
 export default function SignUp() {
   const router = useRouter();
@@ -12,16 +14,22 @@ export default function SignUp() {
   const [username, setUsername] = useState('');
 
   const OnCreateAccount = () => {
-
-    if(!email&&!password&&!username){
-      Alert.alert("Please fill out information correctly")
+    if (!email || !password || !username) {
+      Alert.alert("Error", "Please fill out all information correctly.");
+      return;
     }
+
     console.log("Creating account for:", email);
     createUserWithEmailAndPassword(auth, email, password)
       .then((userCredential) => {
         const user = userCredential.user;
         console.log("User created:", user);
-        Alert.alert("Success", "Account created successfully!");
+        
+        // Redirect to sign-in page with email and password as query parameters
+        router.replace({
+          pathname: '/auth/sign-in',
+          params: { email, password },
+        });
       })
       .catch((error) => {
         const errorCode = error.code;
@@ -32,95 +40,103 @@ export default function SignUp() {
   };
 
   return (
-    <View
-      style={{
-        padding: 25,
-        paddingTop: 50
-      }}
-    >
-      <Text style={{
-        fontWeight:'bold',
-        marginTop: 20,
-        fontSize: 30
-      }}
-      >Create New Account</Text>
+    <BackgroundGradient>
+      <View style={styles.container}>
+        <Animatable.Text 
+          animation="fadeIn" 
+          duration={1000} 
+          style={styles.title}>
+          Create New Account
+        </Animatable.Text>
 
-      <View>
-          <Text style={{
-            marginTop: 30,
-            color: 'black'
-          }}>Username</Text>
-          <TextInput
-          style={styles.input}
-          placeholder='Enter Username'
-          onChangeText={(value)=>setUsername(value)}
-          placeholderTextColor={'gray'}/>
-      </View> 
-
-      <View>
-          <Text style={{
-            marginTop: 20,
-            color: 'black'
-          }}>Email</Text>
-          <TextInput
-          style={styles.input}
-          placeholder='Enter Email'
-          onChangeText={(value)=>setEmail(value)}
-          placeholderTextColor={'gray'}/>
-        </View> 
-        
         <View>
-          <Text style={{
-            marginTop: 20
-          }}>Password</Text>
+          <Text style={styles.label}>Username</Text>
           <TextInput
-          secureTextEntry={true}
-          style={styles.input}
-          placeholder='Enter Pasword'
-          onChangeText={(value)=>setPassword(value)}
-          placeholderTextColor={'gray'}/>
-      </View> 
+            style={styles.input}
+            placeholder="Enter Username"
+            onChangeText={(value) => setUsername(value)}
+            placeholderTextColor={'gray'}
+          />
+        </View>
 
-       {/* Sign in button */}
-       <TouchableOpacity onPress={OnCreateAccount} style={{
-        padding:15,
-        backgroundColor:'black',
-        borderRadius: 15,
-        marginTop: 60
-      }}>
-        <Text style={{
-          color: 'white',
-          textAlign: 'center'
-        }}>Create account</Text>
-      </TouchableOpacity>
+        <View>
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter Email"
+            onChangeText={(value) => setEmail(value)}
+            placeholderTextColor={'gray'}
+          />
+        </View>
 
+        <View>
+          <Text style={styles.label}>Password</Text>
+          <TextInput
+            secureTextEntry={true}
+            style={styles.input}
+            placeholder="Enter Password"
+            onChangeText={(value) => setPassword(value)}
+            placeholderTextColor={'gray'}
+          />
+        </View>
 
-       {/* Create Account button */}
-      <TouchableOpacity
-      onPress={()=>router.replace('auth/sign-in')}
-      style={{
-        padding:15,
-        backgroundColor:'white',
-        borderRadius: 15,
-        marginTop: 20,
-        borderWidth: 1
-      }}>
-        <Text style={{
-          color: 'black',
-          textAlign: 'center'
-        }}>Already have an account?</Text>
-      </TouchableOpacity>
+        <TouchableOpacity onPress={OnCreateAccount} style={styles.button}>
+          <Text style={styles.buttonText}>Create account</Text>
+        </TouchableOpacity>
 
-    </View>    
+        <Link href="/auth/sign-in" asChild>
+          <TouchableOpacity style={styles.createAccountButton}>
+            <Text style={styles.createAccountButtonText}>Already have an account?</Text>
+          </TouchableOpacity>
+        </Link>
+      </View>
+    </BackgroundGradient>
   );
 }
 
-
 const styles = StyleSheet.create({
-  input:{
-      padding: 15,
-      borderWidth: 1,
-      borderRadius: 15,
-      borderColor: 'lightgrey'
-  }
-})
+  container: {
+    padding: 25,
+    marginTop: 50,
+    height: '100%',
+  },
+  title: {
+    fontWeight: 'bold',
+    marginTop: 20,
+    fontSize: 30,
+    textAlign: 'center',
+  },
+  label: {
+    marginTop: 20,
+    color: 'black',
+  },
+  input: {
+    padding: 15,
+    borderWidth: 1,
+    borderRadius: 15,
+    borderColor: 'black',
+    marginTop: 10,
+  },
+  button: {
+    padding: 15,
+    backgroundColor: 'black',
+    borderRadius: 15,
+    marginTop: 40,
+  },
+  buttonText: {
+    color: 'white',
+    textAlign: 'center',
+    fontSize: 16,
+  },
+  createAccountButton: {
+    padding: 15,
+    backgroundColor: 'white',
+    borderRadius: 15,
+    marginTop: 20,
+    borderWidth: 1,
+  },
+  createAccountButtonText: {
+    color: 'black',
+    textAlign: 'center',
+  },
+});

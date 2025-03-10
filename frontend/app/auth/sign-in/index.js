@@ -1,24 +1,32 @@
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../../config/firebaseConfig';
 import { BackgroundGradient } from '../../../constants/globalStyles';
 import { HelloWave } from '../../../components/HelloWave';
-import { createUser } from '../../../utils/firebaseUtils'; // Correct import for createUser
+import { createUser, checkProfileExists } from '../../../utils/firebaseUtils'; // Import checkProfileExists
 import * as Animatable from 'react-native-animatable';
 
 export default function SignIn() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const { email: initialEmail, password: initialPassword } = useLocalSearchParams();
+  const [email, setEmail] = useState(initialEmail || '');
+  const [password, setPassword] = useState(initialPassword || '');
 
   // Monitor authentication state
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         console.log("User is already signed in:", user.email);
-        router.replace('/trips'); // Redirect to trips if user is signed in
+
+        // Check if the user has a profile
+        const profileExists = await checkProfileExists(user.uid);
+        if (profileExists) {
+          router.replace('/trips'); // Redirect to trips if profile exists
+        } else {
+          router.replace('/profile-creation'); // Redirect to profile creation if no profile exists
+        }
       }
     });
 
@@ -35,8 +43,14 @@ export default function SignIn() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       console.log("Signed in as:", user.email);
-      await createUser(); // Ensure user data is created/stored
-      router.replace('/trips'); // Navigate to trips
+
+      // Check if the user has a profile
+      const profileExists = await checkProfileExists(user.uid);
+      if (profileExists) {
+        router.replace('/trips'); // Redirect to trips if profile exists
+      } else {
+        router.replace('/profile-creation'); // Redirect to profile creation if no profile exists
+      }
     } catch (error) {
       const errorCode = error.code;
       const errorMessage = error.message;
