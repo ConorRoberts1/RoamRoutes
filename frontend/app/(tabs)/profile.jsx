@@ -1,9 +1,9 @@
-import { View, Text, Button, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import React from 'react';
-import { BackgroundGradient } from '../../constants/globalStyles'; 
-import { useRouter } from 'expo-router';
-import { signOut } from 'firebase/auth';
-import { auth } from '../../config/firebaseConfig';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import React from "react";
+import { BackgroundGradient } from "../../constants/globalStyles";
+import { useRouter } from "expo-router";
+import { signOut } from "firebase/auth";
+import { auth } from "../../config/firebaseConfig";
 
 export default function Profile() {
   const router = useRouter();
@@ -12,17 +12,24 @@ export default function Profile() {
     signOut(auth)
       .then(() => {
         Alert.alert("Success", "Logged out successfully!");
-        router.replace('/auth/sign-in');
+        router.replace("/auth/sign-in");
       })
       .catch((error) => {
         Alert.alert("Error", error.message);
       });
   };
 
+  const handleEditProfile = () => {
+    router.push("../../profile"); // Navigate to profile creation for editing
+  };
+
   return (
     <BackgroundGradient>
       <View style={styles.container}>
         <Text style={styles.title}>Profile</Text>
+        <TouchableOpacity style={styles.button} onPress={handleEditProfile}>
+          <Text style={styles.buttonText}>Edit Profile</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.button} onPress={handleLogout}>
           <Text style={styles.buttonText}>Log Out</Text>
         </TouchableOpacity>
@@ -34,27 +41,27 @@ export default function Profile() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 25,
   },
   title: {
     fontSize: 30,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    fontWeight: "bold",
+    textAlign: "center",
     marginBottom: 20,
-    color: 'black', 
+    color: "black",
   },
   button: {
     padding: 15,
-    backgroundColor: 'black',
+    backgroundColor: "black",
     borderRadius: 15,
     marginTop: 20,
-    width: '80%',
+    width: "80%",
   },
   buttonText: {
-    color: 'white',
-    textAlign: 'center',
+    color: "white",
+    textAlign: "center",
     fontSize: 20,
   },
 });
