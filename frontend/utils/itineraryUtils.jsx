@@ -1,49 +1,62 @@
 const GEMINI_API_KEY = "AIzaSyAubf4ILpZZVxG_z8hkc9uGhYuB8SQJLOY";
-const TRIPADVISOR_API_KEY = "0FA9609134844821ADC9383F3C185B7A";
+const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+const GOOGLE_PLACES_API_URL = "https://maps.googleapis.com/maps/api/place";
 
-// Enhanced prompt template
+
+// 🟢 **Prompt template to ensure accurate locations**
 const PROMPT_TEMPLATE = (location, groupSize, budget) => `
 Generate a STRICT 1-day itinerary for ${groupSize} people in ${location} with a ${budget} budget.
-Each activity must include a specific, real-world location name and address in ${location}.
-Use EXACTLY this format for each activity line:
+Each activity MUST be a **real** place in ${location}. 
+NO vague names (e.g., "${location}, ${location}")
+NO extra explanations, budget tips, or notes.
 
-Morning: [Activity Name] - [Specific Location Name, Address]
-Afternoon: [Activity Name] - [Specific Location Name, Address]
-Evening: [Activity Name] - [Specific Location Name, Address]
+**Format Example (Paris, France)**
+Morning: Eiffel Tower Visit - Champ de Mars, 5 Av. Anatole France, 75007 Paris, France
+Afternoon: Louvre Museum Tour - Rue de Rivoli, 75001 Paris, France
+Evening: Seine River Cruise - Port de la Bourdonnais, 75007 Paris, France
 
-Example valid response:
-Morning: Central Park Visit - Central Park, 59th to 110th Street, New York, NY
-Afternoon: Metropolitan Museum Tour - 1000 5th Ave, New York, NY 10028
-Evening: Broadway Show - 1681 Broadway, New York, NY 10019
+**Format Example (New York, USA)**
+Morning: Central Park Walk - 59th to 110th Street, New York, NY, USA
+Afternoon: Metropolitan Museum Tour - 1000 5th Ave, New York, NY 10028, USA
+Evening: Broadway Show - 1681 Broadway, New York, NY 10019, USA
 
-Now generate for ${location}:
+**DO NOT** include bullet points, extra text, or anything outside the required format.
+Now generate the itinerary for **${location}**:
 `;
 
-// Main itinerary generation function
-export const generateItinerary = async (location, groupSize, budget) => {
+
+
+// 🟢 **Main function to generate the itinerary**
+export const generateItinerary = async (locationData, groupSize, budget) => {
   try {
+    if (!locationData || !locationData.name) throw new Error("Invalid location data");
+
+    const location = locationData.name;
     console.log(`Generating itinerary for: ${location}`);
+
     const itineraryText = await getGeminiItinerary(location, groupSize, budget);
     const activities = parseItineraryText(itineraryText, location);
-    return await enrichWithTripAdvisor(activities);
+
+    // Enrich with Google Places details
+    const enrichedActivities = await enrichWithGooglePlaces(activities, location);
+    console.log("Enriched Activities:", enrichedActivities);
+
+    return enrichedActivities;
   } catch (error) {
     console.error("Itinerary generation failed:", error);
     throw new Error(`Failed to generate itinerary: ${error.message}`);
   }
 };
 
+// 🟢 **Fetch itinerary from Gemini AI**
 const getGeminiItinerary = async (location, groupSize, budget) => {
   try {
     const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: PROMPT_TEMPLATE(location, groupSize, budget)
-          }]
-        }]
+        contents: [{ parts: [{ text: PROMPT_TEMPLATE(location, groupSize, budget) }] }]
       })
     });
 
@@ -55,35 +68,92 @@ const getGeminiItinerary = async (location, groupSize, budget) => {
 
     const data = await response.json();
     console.log("Raw Gemini Response:", JSON.stringify(data, null, 2));
-    
+
     if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
       throw new Error("Invalid response structure from Gemini API");
     }
-    
+
     return data.candidates[0].content.parts[0].text;
   } catch (error) {
     console.error("Gemini API Error:", error);
     throw new Error(`API request failed: ${error.message}`);
   }
 };
-// Robust parsing with validation
+
+// 🟢 **Fetch place details from Google Places API**
+const fetchGooglePlaceDetails = async (query, location) => {
+  try {
+    const searchQuery = query.includes("-") ? query.split("-")[1].trim() : query;
+    const searchUrl = `${GOOGLE_PLACES_API_URL}/findplacefromtext/json?input=${encodeURIComponent(searchQuery)}&inputtype=textquery&fields=place_id&key=${GOOGLE_PLACES_API_KEY}`;
+    const searchResponse = await fetch(searchUrl);
+    const searchData = await searchResponse.json();
+
+    if (searchData.status !== "OK" || !searchData.candidates?.[0]?.place_id) {
+      throw new Error(`Place not found for query: ${searchQuery}`);
+    }
+
+    const placeId = searchData.candidates[0].place_id;
+    const detailsUrl = `${GOOGLE_PLACES_API_URL}/details/json?place_id=${placeId}&fields=name,formatted_address,geometry,rating,user_ratings_total,photos,types,price_level&key=${GOOGLE_PLACES_API_KEY}`;
+    const detailsResponse = await fetch(detailsUrl);
+    const detailsData = await detailsResponse.json();
+
+    if (detailsData.status !== "OK") {
+      throw new Error("Failed to fetch place details");
+    }
+
+    const placeDetails = detailsData.result;
+
+    // 🟢 Fetch photo URLs **immediately** and resolve them
+    const photos = placeDetails.photos
+      ? await Promise.all(
+          placeDetails.photos.map(photo =>
+            fetchGooglePlacePhoto(photo.photo_reference)
+          )
+        )
+      : [];
+
+    return {
+      name: placeDetails.name || "Unknown",
+      address: placeDetails.formatted_address || "Unknown",
+      latitude: placeDetails.geometry?.location?.lat || 0,
+      longitude: placeDetails.geometry?.location?.lng || 0,
+      rating: placeDetails.rating || "N/A",
+      num_reviews: placeDetails.user_ratings_total || "No reviews",
+      price: placeDetails.price_level || "N/A",
+      photos, // ✅ This is now an array of URLs, NOT unresolved promises
+      description: placeDetails.types?.join(", ") || "No description available",
+    };
+  } catch (error) {
+    console.error("Error fetching Google Places data:", error.message);
+    return null;
+  }
+};
+
+
+// 🟢 **Fetch photo from Google Places API**
+const fetchGooglePlacePhoto = async (photoReference, maxWidth = 400) => {
+  return `${GOOGLE_PLACES_API_URL}/photo?maxwidth=${maxWidth}&photoreference=${photoReference}&key=${GOOGLE_PLACES_API_KEY}`;
+};
+
+
+// 🟢 **Parse itinerary response from Gemini AI**
 const parseItineraryText = (text, originalLocation) => {
-  const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+  const lines = text.split("\n").map(line => line.trim()).filter(line => line);
   const activities = [];
   const timeBlocks = ["Morning:", "Afternoon:", "Evening:"];
 
   for (const line of lines) {
     for (const block of timeBlocks) {
       if (line.startsWith(block)) {
-        const cleanLine = line.replace(block, '').trim();
+        const cleanLine = line.replace(block, "").trim();
         const parts = cleanLine.split(/-(.*)/s).map(p => p.trim());
-        
+
         if (parts.length >= 2 && !parts[1].toLowerCase().includes("undefined")) {
           activities.push({
-            time: block.replace(':', ''),
+            time: block.replace(":", ""),
             title: parts[0],
             location: parts[1] || originalLocation,
-            originalLocation
+            id: `${block}-${parts[0].replace(/\s+/g, "-")}`,
           });
         }
         break;
@@ -99,126 +169,59 @@ const parseItineraryText = (text, originalLocation) => {
   return activities;
 };
 
-// Enrich activities with TripAdvisor data
-const enrichWithTripAdvisor = async (activities) => {
-  try {
-    return await Promise.all(activities.map(async (activity) => {
-      try {
-        const searchParams = new URLSearchParams({
-          key: TRIPADVISOR_API_KEY,
-          searchQuery: `${activity.title} ${activity.location}`,
-          language: "en",
-          category: "attractions" // Focus on attractions
-        });
+// 🟢 **Enrich activities with Google Places data**
+export const enrichWithGooglePlaces = async (activities) => {
+  return Promise.all(
+    activities.map(async (activity) => {
+      const enrichedData = await fetchGooglePlaceDetails(activity.title, activity.location);
 
-        const searchResponse = await fetch(
-          `https://api.content.tripadvisor.com/api/v1/location/search?${searchParams}`
-        );
-
-        if (!searchResponse.ok) throw new Error("TripAdvisor search failed");
-        
-        const searchData = await searchResponse.json();
-        const firstResult = searchData.data?.[0];
-
-        if (!firstResult) {
-          console.warn(`No TripAdvisor results found for: ${activity.title} - ${activity.location}`);
-          return {
+      return enrichedData
+        ? { ...activity, ...enrichedData }
+        : {
             ...activity,
-            status: "error",
-            error: "No details found on TripAdvisor"
+            image: null,
+            rating: "N/A",
+            num_reviews: "No reviews",
+            price: "N/A",
+            description: "No description available",
+            photos: [],
+            reviews: [],
           };
-        }
-
-        // Fetch details for the first result
-        const detailsResponse = await fetch(
-          `https://api.content.tripadvisor.com/api/v1/location/${firstResult.location_id}/details?key=${TRIPADVISOR_API_KEY}&language=en`
-        );
-
-        if (!detailsResponse.ok) throw new Error("TripAdvisor details fetch failed");
-
-        const detailsData = await detailsResponse.json();
-
-        return {
-          ...activity,
-          image: detailsData.photo?.images?.medium?.url || null,
-          rating: detailsData.rating || "N/A",
-          price: detailsData.price_level || "N/A",
-          link: detailsData.web_url || "#",
-          status: "complete"
-        };
-        
-      } catch (error) {
-        console.error(`TripAdvisor error for ${activity.title}:`, error);
-        return { ...activity, status: "error", error: "Could not load details" };
-      }
-    }));
-    
-  } catch (error) {
-    console.error("TripAdvisor enrichment failed:", error);
-    return activities.map(a => ({ ...a, status: "error" }));
-  }
+    })
+  );
 };
-// Regenerate single activity
-const regenerateActivity = async (timeBlock, location, groupSize, budget) => {
+
+
+// 🟢 **Regenerate a single activity**
+export const regenerateActivity = async (timeBlock, location, groupSize, budget) => {
   try {
     const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: `Generate a ${timeBlock} activity for ${groupSize} people in ${location} with a ${budget} budget.
-            Provide a specific, real-world location name and address in ${location}.
-            Use format: [Activity Title] - [Specific Location Name, Address]`
-          }]
-        }]
+        contents: [{ parts: [{ text: `Generate a ${timeBlock} activity for ${groupSize} people in ${location} with a ${budget} budget.
+        Ensure the location is within ${location}, Ireland.
+        Use format: [Activity Title] - [Specific Location Name, Address]` }] }]
       })
     });
 
     if (!response.ok) throw new Error("Regeneration failed");
-    
+
     const data = await response.json();
     const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
+
     if (!rawText) throw new Error("Invalid regeneration response");
-    
+
     const [title, loc] = rawText.split(" - ").map(s => s.trim());
-    
+
     if (!title || !loc) throw new Error("Could not parse regenerated activity");
-    
-    return { time: timeBlock, title, location: loc, status: "pending" };
-    
+
+    return { time: timeBlock, title, location: loc, id: `${timeBlock}-${title.replace(/\s+/g, "-")}` };
   } catch (error) {
     console.error("Regeneration error:", error);
     throw new Error(`Failed to regenerate activity: ${error.message}`);
   }
-};
 
-const handleRegenerate = async (time) => {
-  try {
-    setRegenerating(time);
-    const newActivity = await regenerateActivity(
-      time,
-      params.location,
-      params.groupSize,
-      params.budget
-    );
-    
-    setItinerary(prev => 
-      prev.map(activity => 
-        activity.time === time ? newActivity : activity
-      )
-    );
-    
-    const enriched = await enrichWithTripAdvisor([newActivity]);
-    setItinerary(prev => 
-      prev.map(activity => 
-        activity.time === time ? enriched[0] : activity
-      )
-    );
-  } catch (err) {
-    Alert.alert("Regeneration Failed", err.message);
-  } finally {
-    setRegenerating(null);
-  }
+  console.log(`Image URL: ${imageUrl}`);
+
 };
