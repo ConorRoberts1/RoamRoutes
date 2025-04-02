@@ -20,7 +20,7 @@ export default function Profile() {
   };
 
   const handleEditProfile = () => {
-    router.push("../../profile"); // Navigate to profile creation for editing
+    router.push("/profile-creation"); // Navigate to profile creation for editing
   };
 
   return (
