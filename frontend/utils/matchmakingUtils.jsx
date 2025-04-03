@@ -1,4 +1,4 @@
-import { doc, setDoc, getDoc, collection, getDocs, query } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, getDocs, query, addDoc, serverTimestamp } from "firebase/firestore";
 import { firestore } from "../config/firebaseConfig";
 import { getAuth } from "firebase/auth";
 import { getProfile } from "./firebaseUtils"; // Assuming you have a getProfile(userId) function
@@ -74,7 +74,7 @@ export const fetchPotentialMatches = async () => {
       !passedUserIds.includes(u.userId)
   );
 
-  // 8. (Optional) Sort by some logic, e.g. random or an ELO rating if you add one.
+  // 8. (Optional) Sort by some logic, e.g. random or an ELO rating if added
   // potentialMatches.sort((a, b) => (b.profile.eloRating || 1200) - (a.profile.eloRating || 1200));
 
   return potentialMatches;
@@ -149,4 +149,28 @@ export const handlePass = async (passedUserId) => {
   } catch (error) {
     console.error("Error in handlePass:", error.message);
   }
+
+};
+
+export const createChatIfNotExists = async (chatId, userIds) => {
+  const chatRef = doc(firestore, 'chats', chatId);
+  const chatSnap = await getDoc(chatRef);
+
+  if (!chatSnap.exists()) {
+    await setDoc(chatRef, {
+      users: userIds,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  return chatRef;
+};
+
+export const sendMessage = async (chatId, senderId, text) => {
+  const messagesRef = collection(firestore, `chats/${chatId}/messages`);
+  await addDoc(messagesRef, {
+    senderId,
+    text,
+    timestamp: serverTimestamp(),
+  });
 };
