@@ -109,6 +109,11 @@ export const addLocationToTrip = async (tripId, locationData) => {
     return;
   }
 
+  if (!locationData || !locationData.place_id) {
+    console.error("Invalid location data provided:", locationData);
+    return;
+  }
+
   const userId = user.uid;
 
   try {
