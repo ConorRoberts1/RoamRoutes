@@ -1,11 +1,11 @@
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, InteractionManager } from 'react-native';
 import React, { useState, useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../../config/firebaseConfig';
 import { BackgroundGradient } from '../../../constants/globalStyles';
 import { HelloWave } from '../../../components/HelloWave';
-import { createUser, checkProfileExists } from '../../../utils/firebaseUtils'; // Import checkProfileExists
+import { createUser, checkProfileExists } from '../../../utils/firebaseUtils';
 import * as Animatable from 'react-native-animatable';
 
 export default function SignIn() {
@@ -14,23 +14,22 @@ export default function SignIn() {
   const [email, setEmail] = useState(initialEmail || '');
   const [password, setPassword] = useState(initialPassword || '');
 
-  // Monitor authentication state
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         console.log("User is already signed in:", user.email);
-
-        // Check if the user has a profile
-        const profileExists = await checkProfileExists(user.uid);
-        if (profileExists) {
-          router.replace('/trips'); // Redirect to trips if profile exists
-        } else {
-          router.replace('/profile-creation'); // Redirect to profile creation if no profile exists
-        }
+        InteractionManager.runAfterInteractions(async () => {
+          const profileExists = await checkProfileExists(user.uid);
+          if (profileExists) {
+            router.replace('/(tabs)/trips');
+          } else {
+            router.replace('/profile-creation');
+          }
+        });
       }
     });
 
-    return () => unsubscribe(); // Clean up on unmount
+    return () => unsubscribe();
   }, []);
 
   const OnSignIn = async () => {
@@ -44,17 +43,17 @@ export default function SignIn() {
       const user = userCredential.user;
       console.log("Signed in as:", user.email);
 
-      // Check if the user has a profile
-      const profileExists = await checkProfileExists(user.uid);
-      if (profileExists) {
-        router.replace('/trips'); // Redirect to trips if profile exists
-      } else {
-        router.replace('/profile-creation'); // Redirect to profile creation if no profile exists
-      }
+      InteractionManager.runAfterInteractions(async () => {
+        const profileExists = await checkProfileExists(user.uid);
+        if (profileExists) {
+          router.replace('/trips');
+        } else {
+          router.replace('/profile-creation');
+        }
+      });
     } catch (error) {
-      const errorCode = error.code;
       const errorMessage = error.message;
-      console.log("Error signing in:", errorCode, errorMessage);
+      console.log("Error signing in:", errorMessage);
       Alert.alert("Error", errorMessage);
     }
   };
@@ -62,28 +61,17 @@ export default function SignIn() {
   return (
     <BackgroundGradient>
       <View style={styles.container}>
-        <Animatable.Text 
-          animation="fadeIn" 
-          duration={1000} 
-          style={styles.title}
-          delay={0}>
+        <Animatable.Text animation="fadeIn" duration={1000} style={styles.title} delay={0}>
           Let's Sign You In
         </Animatable.Text>
 
-        <Animatable.Text 
-          animation="fadeIn" 
-          duration={1000} 
-          style={styles.subtitle} 
-          delay={500}>
+        <Animatable.Text animation="fadeIn" duration={1000} style={styles.subtitle} delay={500}>
           Welcome!
         </Animatable.Text>
-        <Animatable.Text 
-          animation="fadeIn" 
-          duration={1000} 
-          style={styles.subtitle} 
-          delay={1000}>
+        <Animatable.Text animation="fadeIn" duration={1000} style={styles.subtitle} delay={1000}>
           Adventure awaits!
         </Animatable.Text>
+
         <View>
           <Text style={styles.label}>Email</Text>
           <TextInput
@@ -94,6 +82,7 @@ export default function SignIn() {
             placeholderTextColor={'gray'}
           />
         </View>
+
         <View>
           <Text style={styles.label}>Password</Text>
           <TextInput
@@ -105,9 +94,11 @@ export default function SignIn() {
             placeholderTextColor={'gray'}
           />
         </View>
+
         <TouchableOpacity onPress={OnSignIn} style={styles.button}>
           <Text style={styles.buttonText}>Sign in</Text>
         </TouchableOpacity>
+
         <TouchableOpacity onPress={() => router.replace('auth/sign-up')} style={styles.createAccountButton}>
           <Text style={styles.createAccountButtonText}>Create Account</Text>
         </TouchableOpacity>
