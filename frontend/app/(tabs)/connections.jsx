@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 
 import { LinearGradient } from "expo-linear-gradient";
@@ -22,8 +23,9 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 export default function Connections() {
   const [profiles, setProfiles] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [loadedImages, setLoadedImages] = useState({}); // track loaded status
 
-  // 1) Fetch all users except current user
+  // Fetch all users except current user
   useEffect(() => {
     async function loadProfiles() {
       const auth = getAuth();
@@ -40,30 +42,39 @@ export default function Connections() {
 
         const fetched = [];
         snapshot.forEach((docSnap) => {
-          // Skip if it's the current user
           if (docSnap.id === currentUserId) return;
-
           const data = docSnap.data();
           const p = data.profile || {};
-          fetched.push({
-            userId: docSnap.id,
-            name: p.name || "Unnamed",
-            age: p.age || 18,
-            bio: p.bio || "",
-            location: p.location || "Unknown",
-            images: p.images || [],
-            hobbies: p.hobbies || [],
+          if (p.images && p.images.length > 0) {
+            fetched.push({
+              userId: docSnap.id,
+              name: p.name || "Unnamed",
+              age: p.age || 18,
+              bio: p.bio || "",
+              location: p.location || "Unknown",
+              images: p.images,
+              hobbies: p.hobbies || [],
+            });
+          }
+        });
+
+        setProfiles(fetched);
+
+        // Prefetch images
+        fetched.forEach((profile) => {
+          profile.images.forEach((img, index) => {
+            Image.prefetch(img);
           });
         });
-        setProfiles(fetched);
+
       } catch (err) {
         console.error("Error fetching user profiles:", err);
       }
     }
+
     loadProfiles();
   }, []);
 
-  // If no profiles or we've gone beyond the last
   if (!profiles[currentIndex]) {
     return (
       <BackgroundGradient>
@@ -76,26 +87,23 @@ export default function Connections() {
 
   const profile = profiles[currentIndex];
 
-  // 2) Handle "Pass"
   const onPass = async () => {
-    // Write to Firestore
     await handlePass(profile.userId);
-    // Move on to next
     setCurrentIndex((prev) => prev + 1);
   };
 
-  // 3) Handle "Like"
   const onLike = async () => {
-    // Write to Firestore
     await handleLike(profile.userId);
-    // Move on to next
     setCurrentIndex((prev) => prev + 1);
+  };
+
+  const handleImageLoad = (imageKey) => {
+    setLoadedImages((prev) => ({ ...prev, [imageKey]: true }));
   };
 
   return (
     <BackgroundGradient>
       <View style={styles.container}>
-        {/* Profile Card */}
         <ScrollView style={styles.scrollView}>
           {/* Photos */}
           <ScrollView
@@ -104,21 +112,34 @@ export default function Connections() {
             showsHorizontalScrollIndicator={false}
             style={styles.photoContainer}
           >
-            {profile.images.map((photo, index) => (
-              <View key={index} style={styles.photoWrapper}>
-                <Image source={{ uri: photo }} style={styles.photo} />
-                <LinearGradient
-                  colors={["transparent", "rgba(0,0,0,0.7)"]}
-                  style={styles.gradient}
-                />
-                <View style={styles.photoInfo}>
-                  <Text style={styles.name}>
-                    {profile.name}, {profile.age}
-                  </Text>
-                  <Text style={styles.location}>{profile.location}</Text>
+            {profile.images.map((photo, index) => {
+              const imageKey = `${profile.userId}_${index}`;
+              return (
+                <View key={index} style={styles.photoWrapper}>
+                  {!loadedImages[imageKey] && (
+                    <View style={styles.photoPlaceholder}>
+                      <ActivityIndicator size="large" color="#ffffff" />
+                    </View>
+                  )}
+                  <Image
+                    source={{ uri: photo }}
+                    style={styles.photo}
+                    resizeMode="cover"
+                    onLoadEnd={() => handleImageLoad(imageKey)}
+                  />
+                  <LinearGradient
+                    colors={["transparent", "rgba(0,0,0,0.7)"]}
+                    style={styles.gradient}
+                  />
+                  <View style={styles.photoInfo}>
+                    <Text style={styles.name}>
+                      {profile.name}, {profile.age}
+                    </Text>
+                    <Text style={styles.location}>{profile.location}</Text>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </ScrollView>
 
           {/* Bio Section */}
@@ -164,7 +185,7 @@ export default function Connections() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "transparent", // gradient behind
+    backgroundColor: "transparent",
   },
   scrollView: {
     flex: 1,
@@ -230,7 +251,7 @@ const styles = StyleSheet.create({
   hobbiesContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12, // React Native 0.71+ supports gap for flex
+    gap: 12,
   },
   hobbyItem: {
     flexDirection: "row",
@@ -259,7 +280,6 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     justifyContent: "center",
     alignItems: "center",
-    // Shadow for iOS/Android
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
@@ -271,5 +291,14 @@ const styles = StyleSheet.create({
   },
   likeButton: {
     backgroundColor: "#fff",
+  },
+  photoPlaceholder: {
+    position: "absolute",
+    width: SCREEN_WIDTH,
+    height: 500,
+    backgroundColor: "rgba(0,0,0,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1,
   },
 });
