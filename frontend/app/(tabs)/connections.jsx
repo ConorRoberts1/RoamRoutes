@@ -9,7 +9,7 @@ import {
   Dimensions,
   ActivityIndicator,
 } from "react-native";
-
+import * as Animatable from 'react-native-animatable';
 import { LinearGradient } from "expo-linear-gradient";
 import { getAuth } from "firebase/auth";
 import { collection, getDocs, query } from "firebase/firestore";
@@ -23,9 +23,9 @@ const SCREEN_WIDTH = Dimensions.get("window").width;
 export default function Connections() {
   const [profiles, setProfiles] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [loadedImages, setLoadedImages] = useState({}); // track loaded status
+  const [loadedImages, setLoadedImages] = useState({});
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
-  // Fetch all users except current user
   useEffect(() => {
     async function loadProfiles() {
       const auth = getAuth();
@@ -39,8 +39,8 @@ export default function Connections() {
       try {
         const q = query(collection(firestore, "users"));
         const snapshot = await getDocs(q);
-
         const fetched = [];
+
         snapshot.forEach((docSnap) => {
           if (docSnap.id === currentUserId) return;
           const data = docSnap.data();
@@ -59,14 +59,9 @@ export default function Connections() {
         });
 
         setProfiles(fetched);
-
-        // Prefetch images
-        fetched.forEach((profile) => {
-          profile.images.forEach((img, index) => {
-            Image.prefetch(img);
-          });
-        });
-
+        fetched.forEach((profile) =>
+          profile.images.forEach((img) => Image.prefetch(img))
+        );
       } catch (err) {
         console.error("Error fetching user profiles:", err);
       }
@@ -75,7 +70,31 @@ export default function Connections() {
     loadProfiles();
   }, []);
 
-  if (!profiles[currentIndex]) {
+  const profile = profiles[currentIndex];
+
+  const onPass = async () => {
+    setIsTransitioning(true);
+    await handlePass(profile.userId);
+    setTimeout(() => {
+      setCurrentIndex((prev) => prev + 1);
+      setIsTransitioning(false);
+    }, 500);
+  };
+
+  const onLike = async () => {
+    setIsTransitioning(true);
+    await handleLike(profile.userId);
+    setTimeout(() => {
+      setCurrentIndex((prev) => prev + 1);
+      setIsTransitioning(false);
+    }, 500);
+  };
+
+  const handleImageLoad = (key) => {
+    setLoadedImages((prev) => ({ ...prev, [key]: true }));
+  };
+
+  if (!profile) {
     return (
       <BackgroundGradient>
         <View style={styles.noProfilesContainer}>
@@ -85,27 +104,27 @@ export default function Connections() {
     );
   }
 
-  const profile = profiles[currentIndex];
-
-  const onPass = async () => {
-    await handlePass(profile.userId);
-    setCurrentIndex((prev) => prev + 1);
-  };
-
-  const onLike = async () => {
-    await handleLike(profile.userId);
-    setCurrentIndex((prev) => prev + 1);
-  };
-
-  const handleImageLoad = (imageKey) => {
-    setLoadedImages((prev) => ({ ...prev, [imageKey]: true }));
-  };
+  if (isTransitioning) {
+    return (
+      <BackgroundGradient>
+        <View style={styles.transitionContainer}>
+          <Animatable.Text
+            animation="pulse"
+            iterationCount="infinite"
+            duration={1000}
+            style={styles.logoText}
+          >
+            RoamRoutes
+          </Animatable.Text>
+        </View>
+      </BackgroundGradient>
+    );
+  }
 
   return (
     <BackgroundGradient>
       <View style={styles.container}>
         <ScrollView style={styles.scrollView}>
-          {/* Photos */}
           <ScrollView
             horizontal
             pagingEnabled
@@ -113,10 +132,10 @@ export default function Connections() {
             style={styles.photoContainer}
           >
             {profile.images.map((photo, index) => {
-              const imageKey = `${profile.userId}_${index}`;
+              const key = `${profile.userId}_${index}`;
               return (
                 <View key={index} style={styles.photoWrapper}>
-                  {!loadedImages[imageKey] && (
+                  {!loadedImages[key] && (
                     <View style={styles.photoPlaceholder}>
                       <ActivityIndicator size="large" color="#ffffff" />
                     </View>
@@ -125,7 +144,7 @@ export default function Connections() {
                     source={{ uri: photo }}
                     style={styles.photo}
                     resizeMode="cover"
-                    onLoadEnd={() => handleImageLoad(imageKey)}
+                    onLoadEnd={() => handleImageLoad(key)}
                   />
                   <LinearGradient
                     colors={["transparent", "rgba(0,0,0,0.7)"]}
@@ -142,12 +161,10 @@ export default function Connections() {
             })}
           </ScrollView>
 
-          {/* Bio Section */}
           <View style={styles.section}>
             <Text style={styles.bio}>{profile.bio}</Text>
           </View>
 
-          {/* Hobbies Section */}
           {!!profile.hobbies.length && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Interests</Text>
@@ -162,7 +179,6 @@ export default function Connections() {
           )}
         </ScrollView>
 
-        {/* Action Buttons */}
         <View style={styles.actionButtons}>
           <TouchableOpacity
             style={[styles.actionButton, styles.passButton]}
@@ -183,34 +199,17 @@ export default function Connections() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "transparent",
-  },
-  scrollView: {
-    flex: 1,
-  },
+  container: { flex: 1, backgroundColor: "transparent" },
+  scrollView: { flex: 1 },
   noProfilesContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-  noProfilesText: {
-    fontSize: 18,
-    color: "#fff",
-  },
-  photoContainer: {
-    height: 500,
-  },
-  photoWrapper: {
-    width: SCREEN_WIDTH,
-    height: 500,
-    position: "relative",
-  },
-  photo: {
-    width: "100%",
-    height: "100%",
-  },
+  noProfilesText: { fontSize: 18, color: "#fff" },
+  photoContainer: { height: 500 },
+  photoWrapper: { width: SCREEN_WIDTH, height: 500, position: "relative" },
+  photo: { width: "100%", height: "100%" },
   gradient: {
     position: "absolute",
     bottom: 0,
@@ -218,41 +217,18 @@ const styles = StyleSheet.create({
     right: 0,
     height: 150,
   },
-  photoInfo: {
-    position: "absolute",
-    bottom: 20,
-    left: 20,
-  },
-  name: {
-    fontSize: 28,
-    color: "#fff",
-    marginBottom: 4,
-  },
-  location: {
-    fontSize: 16,
-    color: "#fff",
-  },
+  photoInfo: { position: "absolute", bottom: 20, left: 20 },
+  name: { fontSize: 28, color: "#fff", marginBottom: 4 },
+  location: { fontSize: 16, color: "#fff" },
   section: {
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: "#e5e5e5",
     backgroundColor: "#fff",
   },
-  bio: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: "#333",
-  },
-  sectionTitle: {
-    fontSize: 18,
-    marginBottom: 16,
-    color: "#333",
-  },
-  hobbiesContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-  },
+  bio: { fontSize: 16, lineHeight: 24, color: "#333" },
+  sectionTitle: { fontSize: 18, marginBottom: 16, color: "#333" },
+  hobbiesContainer: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   hobbyItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -261,10 +237,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     gap: 8,
   },
-  hobbyText: {
-    fontSize: 14,
-    color: "#333",
-  },
+  hobbyText: { fontSize: 14, color: "#333" },
   actionButtons: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -286,12 +259,8 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
-  passButton: {
-    backgroundColor: "#fff",
-  },
-  likeButton: {
-    backgroundColor: "#fff",
-  },
+  passButton: { backgroundColor: "#fff" },
+  likeButton: { backgroundColor: "#fff" },
   photoPlaceholder: {
     position: "absolute",
     width: SCREEN_WIDTH,
@@ -300,5 +269,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     zIndex: 1,
+  },
+  transitionContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  logoText: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "black",
   },
 });
