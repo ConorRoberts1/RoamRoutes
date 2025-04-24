@@ -124,6 +124,28 @@ export default function ItineraryScreen() {
     setModalVisible(true);
   };
 
+  const openGoogleMaps = (activities) => {
+    if (!activities || activities.length === 0) {
+      Alert.alert("No locations", "Itinerary does not contain valid locations.");
+      return;
+    }
+    
+    try {
+      // Get the first activity's location for simple navigation
+      const location = encodeURIComponent(activities[0].location);
+      const googleMapsURL = `https://www.google.com/maps/search/?api=1&query=${location}`;
+      
+      Linking.openURL(googleMapsURL)
+        .catch(err => {
+          console.error('Error opening Google Maps:', err);
+          Alert.alert('Error', 'Could not open Google Maps');
+        });
+    } catch (error) {
+      console.error('Error preparing Google Maps URL:', error);
+      Alert.alert('Error', 'Could not open Google Maps');
+    }
+  };
+
   const renderActivity = (activity, index) => (
     <TouchableOpacity key={activity.id || `${activity.time}-${index}`} onPress={() => showDescription(activity)}>
       <View style={styles.card}>
