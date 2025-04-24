@@ -1,21 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, Image, ScrollView, TouchableOpacity, ActivityIndicator, 
+  View, Text, ScrollView, TouchableOpacity, ActivityIndicator, 
   StyleSheet, Alert, Modal, FlatList 
 } from 'react-native';
 import { generateItinerary, regenerateActivity } from '../../utils/itineraryUtils';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { BackgroundGradient } from '../../constants/globalStyles';
 import { Linking } from 'react-native';
+import { getAuth } from 'firebase/auth';
+import { doc, setDoc, collection } from 'firebase/firestore';
+import { firestore } from '../../config/firebaseConfig';
+import { Image } from 'expo-image';
+
+const blurhash = "LGF5]+Yk^6#M@-5c,1J5@[or[Q6.";
 
 export default function ItineraryScreen() {
   const params = useLocalSearchParams();
+  const router = useRouter();
   const [itinerary, setItinerary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [regenerating, setRegenerating] = useState(null);
   const [selectedActivity, setSelectedActivity] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [savingItinerary, setSavingItinerary] = useState(false);
 
   let locationData = {};
   try {
@@ -26,9 +34,26 @@ export default function ItineraryScreen() {
 
   const location = locationData?.name || "Unknown";
   const groupSize = params.groupSize || 1;
-  const budget = params.budget || "$";
+  const budget = params.spending || "$";
+  const tripId = params.tripId;
 
   useEffect(() => {
+    const savedActivitiesString = params.savedActivities;
+    
+    if (savedActivitiesString) {
+      try {
+        const parsedActivities = JSON.parse(savedActivitiesString);
+        if (Array.isArray(parsedActivities) && parsedActivities.length > 0) {
+          setItinerary(parsedActivities);
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.error("Error parsing saved activities:", err);
+      }
+    }
+    
+    
     loadItinerary();
   }, []);
 
@@ -51,28 +76,46 @@ export default function ItineraryScreen() {
     }
   };
 
-  const openGoogleMaps = (activities) => {
-    if (!activities || activities.length === 0) {
-      Alert.alert("No locations", "Itinerary does not contain valid locations.");
-      return;
-    }
-    const baseURL = "https://www.google.com/maps/dir/?api=1";
-    const waypoints = activities.map(activity => encodeURIComponent(activity.location)).join("|");
-    const googleMapsURL = `${baseURL}&waypoints=${waypoints}`;
-    Linking.openURL(googleMapsURL);
-  };
-
-  const handleRegenerate = async (time) => {
+  const saveItineraryToFirebase = async () => {
     try {
-      setRegenerating(time);
-      const newActivity = await regenerateActivity(time, location, groupSize, budget);
-      setItinerary(prev => prev.map(activity => 
-        activity.time === time ? { ...newActivity, status: "pending" } : activity
-      ));
-    } catch (err) {
-      Alert.alert("Regeneration Failed", err.message);
+      setSavingItinerary(true);
+      const auth = getAuth();
+      const user = auth.currentUser;
+      
+      if (!user) {
+        throw new Error("You must be logged in to save an itinerary");
+      }
+      
+      const userId = user.uid;
+      
+      // Create a unique ID for this itinerary that includes the location name
+      const sanitizedLocationName = locationData?.name?.replace(/[^a-zA-Z0-9]/g, "_") || "trip";
+      const itineraryId = tripId || `${sanitizedLocationName}_${Date.now()}`;
+      
+      // Save the itinerary data with a proper name based on location
+      const itineraryData = {
+        location: locationData,
+        name: locationData?.name || "My Trip", // Add a name property based on location
+        activities: itinerary,
+        createdAt: new Date().toISOString(),
+        groupSize,
+        budget,
+      };
+      
+      // Save to the user's trips collection
+      const itineraryDocRef = doc(firestore, `users/${userId}/trips`, itineraryId);
+      await setDoc(itineraryDocRef, itineraryData);
+      
+      Alert.alert(
+        "Success", 
+        `Trip to ${locationData?.name || "destination"} saved successfully!`, 
+        [{ text: "OK", onPress: () => router.push('/(tabs)/trips') }]
+      );
+    } catch (error) {
+      console.error("Error saving itinerary:", error);
+      Alert.alert("Error", error.message);
     } finally {
-      setRegenerating(null);
+      setSavingItinerary(false);
     }
   };
 
@@ -87,9 +130,12 @@ export default function ItineraryScreen() {
         <View style={styles.imageContainer}>
           {activity.photos && activity.photos.length > 0 ? (
             <Image 
-              source={{ uri: activity.photos[0] }} // Only display the first image for now
+              source={{ uri: activity.photos[0] }}
               style={styles.image}
-              onError={(e) => console.error("Image Load Error:", e.nativeEvent.error)}
+              placeholder={blurhash}
+              contentFit="cover"
+              transition={300}
+              cachePolicy="memory-disk"
             />
           ) : (
             <View style={styles.placeholderImage}>
@@ -155,6 +201,23 @@ export default function ItineraryScreen() {
 
           <Text style={styles.sectionTitle}>🌙 Evening</Text>
           {itinerary.filter(a => a.time.includes("Evening")).map(renderActivity)}
+          
+          <TouchableOpacity 
+            style={styles.acceptButton}
+            onPress={saveItineraryToFirebase}
+            disabled={savingItinerary}
+          >
+            <Text style={styles.acceptButtonText}>
+              {savingItinerary ? "Saving..." : "Accept Itinerary"}
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.regenerateButton}
+            onPress={loadItinerary}
+          >
+            <Text style={styles.regenerateButtonText}>Generate New Itinerary</Text>
+          </TouchableOpacity>
         </ScrollView>
       </View>
     </BackgroundGradient>
@@ -163,18 +226,67 @@ export default function ItineraryScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 20 },
+  scrollContainer: { paddingBottom: 40 },
   sectionTitle: { fontSize: 20, fontWeight: 'bold', marginVertical: 10 },
   card: { backgroundColor: 'white', borderRadius: 10, padding: 10, marginBottom: 10 },
   imageContainer: { width: '100%', height: 150 },
   image: { width: '100%', height: '100%', borderRadius: 10 },
+  placeholderImage: { 
+    width: '100%', 
+    height: '100%', 
+    borderRadius: 10,
+    backgroundColor: '#e0e0e0', 
+    justifyContent: 'center', 
+    alignItems: 'center'
+  },
+  placeholderText: { color: '#666' },
   details: { padding: 10 },
-  title: { fontSize: 16, fontWeight: 'bold' },
-  location: { fontSize: 14, color: 'gray' },
+  time: { fontSize: 14, color: '#666', marginBottom: 4 },
+  title: { fontSize: 18, fontWeight: 'bold' },
+  location: { fontSize: 14, color: 'gray', marginBottom: 8 },
+  metaContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   metaText: { fontSize: 12, color: 'gray' },
-  modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
-  modalContent: { backgroundColor: 'white', padding: 20, borderRadius: 10 },
-  modalTitle: { fontSize: 18, fontWeight: 'bold' },
-  modalDescription: { fontSize: 14, marginVertical: 10 },
-  closeButton: { backgroundColor: '#FF5733', padding: 10, borderRadius: 5 },
-  buttonText: { color: 'white', textAlign: 'center' },
+  mapsButton: { 
+    backgroundColor: '#4285F4', 
+    padding: 8, 
+    borderRadius: 5, 
+    alignItems: 'center' 
+  },
+  buttonText: { color: 'white', fontWeight: '500' },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20
+  },
+  loadingText: { color: 'black', marginTop: 12, fontSize: 16 },
+  errorHeading: { fontSize: 18, fontWeight: 'bold', color: 'red', marginBottom: 10 },
+  errorText: { textAlign: 'center', marginBottom: 20 },
+  retryButton: { backgroundColor: 'black', padding: 10, borderRadius: 10 },
+  retryText: { color: 'white' },
+  acceptButton: {
+    backgroundColor: 'black',
+    padding: 15,
+    borderRadius: 15,
+    marginTop: 20,
+    alignItems: 'center'
+  },
+  acceptButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold'
+  },
+  regenerateButton: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 15,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: 'black',
+    alignItems: 'center'
+  },
+  regenerateButtonText: {
+    color: 'black',
+    fontSize: 16
+  }
 });
