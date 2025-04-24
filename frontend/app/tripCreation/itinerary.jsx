@@ -1,14 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, Text, ScrollView, TouchableOpacity, ActivityIndicator, 
-  StyleSheet, Alert, Modal, FlatList 
-} from 'react-native';
-import { generateItinerary, regenerateActivity } from '../../utils/itineraryUtils';
+import {  View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Alert} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { generateItinerary } from '../../utils/itineraryUtils';
 import { BackgroundGradient } from '../../constants/globalStyles';
 import { Linking } from 'react-native';
 import { getAuth } from 'firebase/auth';
-import { doc, setDoc, collection } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { firestore } from '../../config/firebaseConfig';
 import { Image } from 'expo-image';
 
@@ -20,10 +17,9 @@ export default function ItineraryScreen() {
   const [itinerary, setItinerary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [regenerating, setRegenerating] = useState(null);
-  const [selectedActivity, setSelectedActivity] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
   const [savingItinerary, setSavingItinerary] = useState(false);
+  const [userHobbies, setUserHobbies] = useState([]);
+  const [regeneratingItinerary, setRegeneratingItinerary] = useState(false);
 
   let locationData = {};
   try {
@@ -38,8 +34,25 @@ export default function ItineraryScreen() {
   const tripId = params.tripId;
 
   useEffect(() => {
+    const fetchUserHobbies = async () => {
+      try {
+        const auth = getAuth();
+        const user = auth.currentUser;
+        if (!user) return;
+        const userDocRef = doc(firestore, "users", user.uid);
+        const userDoc = await getDoc(userDocRef);
+        if (userDoc.exists() && userDoc.data()?.profile?.hobbies) {
+          setUserHobbies(userDoc.data().profile.hobbies);
+        }
+      } catch (error) {
+        console.error("Error fetching user hobbies:", error);
+      }
+    };
+    fetchUserHobbies();
+  }, []);
+
+  useEffect(() => {
     const savedActivitiesString = params.savedActivities;
-    
     if (savedActivitiesString) {
       try {
         const parsedActivities = JSON.parse(savedActivitiesString);
@@ -52,22 +65,15 @@ export default function ItineraryScreen() {
         console.error("Error parsing saved activities:", err);
       }
     }
-    
-    
     loadItinerary();
-  }, []);
+  }, [userHobbies]);
 
   const loadItinerary = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await generateItinerary(locationData, groupSize, budget);
-      console.log("Generated Itinerary:", data);
-
-      if (!data || data.length === 0) {
-        throw new Error("No itinerary available for this location.");
-      }
-
+      const data = await generateItinerary(locationData, groupSize, budget, userHobbies);
+      if (!data || data.length === 0) throw new Error("No itinerary available for this location.");
       setItinerary(data);
     } catch (err) {
       setError(err.message);
@@ -76,109 +82,82 @@ export default function ItineraryScreen() {
     }
   };
 
+  const regenerateItinerary = async () => {
+    try {
+      setRegeneratingItinerary(true);
+      setError(null);
+      const currentIds = itinerary.map(item => item.id || `${item.time}-${item.title}`);
+      let attempts = 0;
+      let newItinerary;
+      while (attempts < 3) {
+        attempts++;
+        newItinerary = await generateItinerary(locationData, groupSize, budget, userHobbies);
+        if (!newItinerary || newItinerary.length === 0) throw new Error("No itinerary available.");
+        const newIds = newItinerary.map(item => item.id || `${item.time}-${item.title}`);
+        const different = newIds.filter(id => !currentIds.includes(id)).length;
+        if (different >= 2) break;
+      }
+      setItinerary(newItinerary);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRegeneratingItinerary(false);
+    }
+  };
+
   const saveItineraryToFirebase = async () => {
     try {
       setSavingItinerary(true);
-      const auth = getAuth();
-      const user = auth.currentUser;
-      
-      if (!user) {
-        throw new Error("You must be logged in to save an itinerary");
-      }
-      
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("You must be logged in to save an itinerary");
       const userId = user.uid;
-      
-      // Create a unique ID for this itinerary that includes the location name
-      const sanitizedLocationName = locationData?.name?.replace(/[^a-zA-Z0-9]/g, "_") || "trip";
-      const itineraryId = tripId || `${sanitizedLocationName}_${Date.now()}`;
-      
-      // Save the itinerary data with a proper name based on location
+      const sanitizedName = location.replace(/[^a-zA-Z0-9]/g, "_");
+      const itineraryId = tripId || `${sanitizedName}_${Date.now()}`;
       const itineraryData = {
         location: locationData,
-        name: locationData?.name || "My Trip", // Add a name property based on location
+        name: location,
         activities: itinerary,
         createdAt: new Date().toISOString(),
         groupSize,
         budget,
       };
-      
-      // Save to the user's trips collection
-      const itineraryDocRef = doc(firestore, `users/${userId}/trips`, itineraryId);
-      await setDoc(itineraryDocRef, itineraryData);
-      
-      Alert.alert(
-        "Success", 
-        `Trip to ${locationData?.name || "destination"} saved successfully!`, 
-        [{ text: "OK", onPress: () => router.push('/(tabs)/trips') }]
-      );
+      await setDoc(doc(firestore, `users/${userId}/trips`, itineraryId), itineraryData);
+      Alert.alert("Success", `Trip to ${location} saved!`, [
+        { text: "OK", onPress: () => router.push("/(tabs)/trips") }
+      ]);
     } catch (error) {
-      console.error("Error saving itinerary:", error);
       Alert.alert("Error", error.message);
     } finally {
       setSavingItinerary(false);
     }
   };
 
-  const showDescription = (activity) => {
-    setSelectedActivity(activity);
-    setModalVisible(true);
-  };
-
-  const openGoogleMaps = (activities) => {
-    if (!activities || activities.length === 0) {
-      Alert.alert("No locations", "Itinerary does not contain valid locations.");
-      return;
-    }
-    
-    try {
-      // Get the first activity's location for simple navigation
-      const location = encodeURIComponent(activities[0].location);
-      const googleMapsURL = `https://www.google.com/maps/search/?api=1&query=${location}`;
-      
-      Linking.openURL(googleMapsURL)
-        .catch(err => {
-          console.error('Error opening Google Maps:', err);
-          Alert.alert('Error', 'Could not open Google Maps');
-        });
-    } catch (error) {
-      console.error('Error preparing Google Maps URL:', error);
-      Alert.alert('Error', 'Could not open Google Maps');
-    }
+  const openGoogleMaps = (location) => {
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+    Linking.openURL(url).catch(() => Alert.alert("Error", "Could not open Google Maps"));
   };
 
   const renderActivity = (activity, index) => (
-    <TouchableOpacity key={activity.id || `${activity.time}-${index}`} onPress={() => showDescription(activity)}>
+    <TouchableOpacity key={activity.id || `${activity.time}-${index}`} onPress={() => openGoogleMaps(activity.location)}>
       <View style={styles.card}>
         <View style={styles.imageContainer}>
-          {activity.photos && activity.photos.length > 0 ? (
-            <Image 
-              source={{ uri: activity.photos[0] }}
-              style={styles.image}
-              placeholder={blurhash}
-              contentFit="cover"
-              transition={300}
-              cachePolicy="memory-disk"
-            />
+          {activity.photos?.[0] ? (
+            <Image source={{ uri: activity.photos[0] }} style={styles.image} placeholder={blurhash} contentFit="cover" transition={300} />
           ) : (
             <View style={styles.placeholderImage}>
               <Text style={styles.placeholderText}>No Image Available</Text>
             </View>
           )}
         </View>
-
         <View style={styles.details}>
           <Text style={styles.time}>{activity.time}</Text>
           <Text style={styles.title}>{activity.title}</Text>
           <Text style={styles.location}>{activity.location}</Text>
-
           <View style={styles.metaContainer}>
-            <Text style={styles.metaText}>
-              ⭐ {activity.rating} ({activity.num_reviews} reviews)
-            </Text>
+            <Text style={styles.metaText}>⭐ {activity.rating ?? 'N/A'} ({activity.num_reviews ?? 0} reviews)</Text>
             <Text style={styles.metaText}>💰 Price: {activity.price || "N/A"}</Text>
           </View>
-
-          <TouchableOpacity onPress={() => openGoogleMaps([activity])} style={styles.mapsButton}>
+          <TouchableOpacity onPress={() => openGoogleMaps(activity.location)} style={styles.mapsButton}>
             <Text style={styles.buttonText}>📍 Open in Google Maps</Text>
           </TouchableOpacity>
         </View>
@@ -190,7 +169,7 @@ export default function ItineraryScreen() {
     return (
       <BackgroundGradient>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#ffffff" />
+          <ActivityIndicator size="large" color="#fff" />
           <Text style={styles.loadingText}>Crafting your perfect day...</Text>
         </View>
       </BackgroundGradient>
@@ -223,28 +202,24 @@ export default function ItineraryScreen() {
 
           <Text style={styles.sectionTitle}>🌙 Evening</Text>
           {itinerary.filter(a => a.time.includes("Evening")).map(renderActivity)}
-          
-          <TouchableOpacity 
-            style={styles.acceptButton}
-            onPress={saveItineraryToFirebase}
-            disabled={savingItinerary}
-          >
+
+          <TouchableOpacity style={styles.acceptButton} onPress={saveItineraryToFirebase} disabled={savingItinerary}>
             <Text style={styles.acceptButtonText}>
               {savingItinerary ? "Saving..." : "Accept Itinerary"}
             </Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.regenerateButton}
-            onPress={loadItinerary}
-          >
-            <Text style={styles.regenerateButtonText}>Generate New Itinerary</Text>
+
+          <TouchableOpacity style={styles.regenerateButton} onPress={regeneratingItinerary ? null : regenerateItinerary} disabled={regeneratingItinerary}>
+            <Text style={styles.regenerateButtonText}>
+              {regeneratingItinerary ? "Finding New Options..." : "Generate New Itinerary"}
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
     </BackgroundGradient>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: { padding: 20 },
