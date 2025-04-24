@@ -1,15 +1,22 @@
-const GEMINI_API_KEY = "AIzaSyAubf4ILpZZVxG_z8hkc9uGhYuB8SQJLOY";
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 const GOOGLE_PLACES_API_URL = "https://maps.googleapis.com/maps/api/place";
 
 
-// 🟢 **Prompt template to ensure accurate locations**
-const PROMPT_TEMPLATE = (location, groupSize, budget) => `
+const PROMPT_TEMPLATE = (location, groupSize, budget, hobbies = []) => {
+  // Format hobbies into a string if they exist
+  const hobbiesText = hobbies && hobbies.length > 0 
+    ? `The traveler is especially interested in: ${hobbies.join(", ")}. 
+       Try to include places and activities related to these interests.`
+    : '';
+
+  return `
 Generate a STRICT 1-day itinerary for ${groupSize} people in ${location} with a ${budget} budget.
 Each activity MUST be a **real** place in ${location}. 
 NO vague names (e.g., "${location}, ${location}")
 NO extra explanations, budget tips, or notes.
+${hobbiesText}
 
 **Format Example (Paris, France)**
 Morning: Eiffel Tower Visit - Champ de Mars, 5 Av. Anatole France, 75007 Paris, France
@@ -22,20 +29,20 @@ Afternoon: Metropolitan Museum Tour - 1000 5th Ave, New York, NY 10028, USA
 Evening: Broadway Show - 1681 Broadway, New York, NY 10019, USA
 
 **DO NOT** include bullet points, extra text, or anything outside the required format.
-Now generate the itinerary for **${location}**:
+Now generate the itinerary for **${location}** that includes their interest in ${hobbies.length > 0 ? hobbies.join(", ") : "general tourism"}:
 `;
+};
 
 
-
-// 🟢 **Main function to generate the itinerary**
-export const generateItinerary = async (locationData, groupSize, budget) => {
+//  **Main function to generate the itinerary**
+export const generateItinerary = async (locationData, groupSize, budget, hobbies = []) => {
   try {
     if (!locationData || !locationData.name) throw new Error("Invalid location data");
 
     const location = locationData.name;
-    console.log(`Generating itinerary for: ${location}`);
+    console.log(`Generating itinerary for: ${location} with interests: ${hobbies.join(", ") || "none specified"}`);
 
-    const itineraryText = await getGeminiItinerary(location, groupSize, budget);
+    const itineraryText = await getGeminiItinerary(location, groupSize, budget, hobbies);
     const activities = parseItineraryText(itineraryText, location);
 
     // Enrich with Google Places details
@@ -49,14 +56,15 @@ export const generateItinerary = async (locationData, groupSize, budget) => {
   }
 };
 
-// 🟢 **Fetch itinerary from Gemini AI**
-const getGeminiItinerary = async (location, groupSize, budget) => {
+
+//  **Fetch itinerary from Gemini AI**
+const getGeminiItinerary = async (location, groupSize, budget, hobbies = []) => {
   try {
     const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: PROMPT_TEMPLATE(location, groupSize, budget) }] }]
+        contents: [{ parts: [{ text: PROMPT_TEMPLATE(location, groupSize, budget, hobbies) }] }]
       })
     });
 
@@ -80,7 +88,8 @@ const getGeminiItinerary = async (location, groupSize, budget) => {
   }
 };
 
-// 🟢 **Fetch place details from Google Places API**
+
+// **Fetch place details from Google Places API**
 const fetchGooglePlaceDetails = async (query, location) => {
   try {
     const searchQuery = query.includes("-") ? query.split("-")[1].trim() : query;
@@ -103,7 +112,7 @@ const fetchGooglePlaceDetails = async (query, location) => {
 
     const placeDetails = detailsData.result;
 
-    // 🟢 Fetch photo URLs **immediately** and resolve them
+    // Fetch photo URLs and resolve them
     const photos = placeDetails.photos
       ? await Promise.all(
           placeDetails.photos.map(photo =>
@@ -120,7 +129,7 @@ const fetchGooglePlaceDetails = async (query, location) => {
       rating: placeDetails.rating || "N/A",
       num_reviews: placeDetails.user_ratings_total || "No reviews",
       price: placeDetails.price_level || "N/A",
-      photos, // ✅ This is now an array of URLs, NOT unresolved promises
+      photos, 
       description: placeDetails.types?.join(", ") || "No description available",
     };
   } catch (error) {
@@ -130,13 +139,13 @@ const fetchGooglePlaceDetails = async (query, location) => {
 };
 
 
-// 🟢 **Fetch photo from Google Places API**
+// **Fetch photo from Google Places API**
 const fetchGooglePlacePhoto = async (photoReference, maxWidth = 400) => {
   return `${GOOGLE_PLACES_API_URL}/photo?maxwidth=${maxWidth}&photoreference=${photoReference}&key=${GOOGLE_PLACES_API_KEY}`;
 };
 
 
-// 🟢 **Parse itinerary response from Gemini AI**
+//  **Parse itinerary response from Gemini AI**
 const parseItineraryText = (text, originalLocation) => {
   const lines = text.split("\n").map(line => line.trim()).filter(line => line);
   const activities = [];
@@ -222,6 +231,5 @@ export const regenerateActivity = async (timeBlock, location, groupSize, budget)
     throw new Error(`Failed to regenerate activity: ${error.message}`);
   }
 
-  console.log(`Image URL: ${imageUrl}`);
-
+  
 };
