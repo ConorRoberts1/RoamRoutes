@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, Image, ScrollView } from "react-native";
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, Image, ScrollView, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import Slider from "@react-native-community/slider";
@@ -19,6 +19,9 @@ export default function ProfileCreation() {
   const [genderPreference, setGenderPreference] = useState([]);
   const [selectedLanguages, setSelectedLanguages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [existingProfile, setExistingProfile] = useState(null);
 
   // Expanded hobby list with more travel-relevant options
   const hobbiesList = [
@@ -34,19 +37,34 @@ export default function ProfileCreation() {
   // Fetch existing profile data if editing
   useEffect(() => {
     const fetchProfile = async () => {
-      if (!auth.currentUser) return;
+      if (!auth.currentUser) {
+        setIsInitialLoading(false);
+        return;
+      }
       
-      const profile = await getProfile(auth.currentUser.uid);
-      if (profile) {
-        setName(profile.name || "");
-        setImages(profile.images || []);
-        setAge(profile.age ? profile.age.toString() : "");
-        setSelectedHobbies(profile.hobbies || []);
-        setAgeRange(profile.ageRange || [18, 35]);
-        setGenderPreference(profile.genderPreference || []);
-        setSelectedLanguages(profile.languages || []);
+      try {
+        const profile = await getProfile(auth.currentUser.uid);
+        if (profile) {
+          // Profile exists, set edit mode
+          setExistingProfile(profile);
+          setIsEditMode(true);
+          
+          // Populate form fields with existing data
+          setName(profile.name || "");
+          setImages(profile.images || []);
+          setAge(profile.age ? profile.age.toString() : "");
+          setSelectedHobbies(profile.hobbies || []);
+          setAgeRange(profile.ageRange || [18, 35]);
+          setGenderPreference(profile.genderPreference || []);
+          setSelectedLanguages(profile.languages || []);
+        }
+      } catch (error) {
+        console.error("Error fetching profile:", error);
+      } finally {
+        setIsInitialLoading(false);
       }
     };
+    
     fetchProfile();
   }, []);
 
@@ -67,6 +85,10 @@ export default function ProfileCreation() {
       const selectedImages = result.assets.map((asset) => asset.uri);
       setImages((prev) => [...prev, ...selectedImages].slice(0, 6)); // Limit to 6 images
     }
+  };
+
+  const handleRemoveImage = (indexToRemove) => {
+    setImages(images.filter((_, index) => index !== indexToRemove));
   };
 
   const handleSaveProfile = async () => {
@@ -93,8 +115,20 @@ export default function ProfileCreation() {
     setIsLoading(true);
 
     try {
-      // Upload images to Firebase Storage and get their URLs
-      const imageUrls = await uploadImages(images);
+      // Determine which images need to be uploaded
+      let imageUrls = [];
+      
+      // For edit mode, determine which images are already URLs vs local URIs
+      const imagesToUpload = images.filter(img => img.startsWith('file:') || img.startsWith('content:'));
+      const existingImageUrls = images.filter(img => !img.startsWith('file:') && !img.startsWith('content:'));
+      
+      // Only upload new images
+      if (imagesToUpload.length > 0) {
+        const newImageUrls = await uploadImages(imagesToUpload);
+        imageUrls = [...existingImageUrls, ...newImageUrls];
+      } else {
+        imageUrls = existingImageUrls;
+      }
 
       // Save profile data to Firestore
       await saveProfile({
@@ -107,8 +141,11 @@ export default function ProfileCreation() {
         languages: selectedLanguages,
       });
 
-      Alert.alert("Success", "Profile saved successfully!");
-      router.replace('/trips');
+      Alert.alert(
+        "Success", 
+        isEditMode ? "Profile updated successfully!" : "Profile created successfully!", 
+        [{ text: "OK", onPress: () => router.replace('/trips') }]
+      );
     } catch (error) {
       console.error("Error saving profile:", error.message);
       Alert.alert("Error", "Failed to save profile. Please try again.");
@@ -146,11 +183,22 @@ export default function ProfileCreation() {
     );
   };
 
+  if (isInitialLoading) {
+    return (
+      <BackgroundGradient>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#000" />
+          <Text style={styles.loadingText}>Loading profile data...</Text>
+        </View>
+      </BackgroundGradient>
+    );
+  }
+
   return (
     <BackgroundGradient>
       <ScrollView contentContainerStyle={styles.container}>
         <Animatable.Text animation="fadeIn" duration={800} style={styles.title}>
-          Create Your Profile
+          {isEditMode ? "Edit Your Profile" : "Create Your Profile"}
         </Animatable.Text>
 
         <Animatable.View animation="fadeIn" delay={200} duration={800}>
@@ -170,7 +218,15 @@ export default function ProfileCreation() {
 
           <View style={styles.imageContainer}>
             {images.map((uri, index) => (
-              <Image key={index} source={{ uri }} style={styles.image} />
+              <View key={index} style={styles.imageWrapper}>
+                <Image source={{ uri }} style={styles.image} />
+                <TouchableOpacity 
+                  style={styles.removeImageButton}
+                  onPress={() => handleRemoveImage(index)}
+                >
+                  <Text style={styles.removeImageText}>✕</Text>
+                </TouchableOpacity>
+              </View>
             ))}
             {images.length < 6 && (
               <TouchableOpacity onPress={handleImageUpload} style={styles.uploadButton}>
@@ -313,16 +369,27 @@ export default function ProfileCreation() {
             disabled={isLoading}
           >
             <Text style={styles.buttonText}>
-              {isLoading ? "Saving..." : "Save Profile"}
+              {isLoading ? "Saving..." : (isEditMode ? "Update Profile" : "Save Profile")}
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-            onPress={handleSkipProfileCreation} 
-            style={styles.skipButton}
-          >
-            <Text style={styles.skipButtonText}>Skip for Now</Text>
-          </TouchableOpacity>
+          {!isEditMode && (
+            <TouchableOpacity 
+              onPress={handleSkipProfileCreation} 
+              style={styles.skipButton}
+            >
+              <Text style={styles.skipButtonText}>Skip for Now</Text>
+            </TouchableOpacity>
+          )}
+
+          {isEditMode && (
+            <TouchableOpacity 
+              onPress={() => router.back()} 
+              style={styles.skipButton}
+            >
+              <Text style={styles.skipButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          )}
         </Animatable.View>
       </ScrollView>
     </BackgroundGradient>
@@ -333,6 +400,16 @@ const styles = StyleSheet.create({
   container: {
     padding: 25,
     paddingBottom: 50,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#000",
   },
   title: {
     fontSize: 32,
@@ -359,11 +436,31 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     justifyContent: "flex-start",
   },
+  imageWrapper: {
+    position: "relative",
+    margin: 5,
+  },
   image: {
     width: 100,
     height: 100,
     borderRadius: 10,
-    margin: 5,
+  },
+  removeImageButton: {
+    position: "absolute",
+    top: -8,
+    right: -8,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderRadius: 15,
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  removeImageText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "bold",
   },
   uploadButton: {
     width: 100,
