@@ -1,13 +1,17 @@
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import React, { useEffect, useState } from 'react';
+import { Image } from 'expo-image'; // Use expo-image
 import { getAuth } from 'firebase/auth';
 import { firestore } from '../../config/firebaseConfig';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { useRouter } from 'expo-router';
 import { BackgroundGradient } from '../../constants/globalStyles';
 
+const blurhash = "LGF5]+Yk^6#M@-5c,1J5@[or[Q6."; // Blurhash placeholder
+
 export default function Messages() {
   const [matches, setMatches] = useState([]);
+  const [loading, setLoading] = useState(true);
   const auth = getAuth();
   const userId = auth.currentUser?.uid;
   const router = useRouter();
@@ -15,21 +19,55 @@ export default function Messages() {
   useEffect(() => {
     const fetchMatches = async () => {
       if (!userId) return;
+      
+      try {
+        setLoading(true);
+        const matchesSnap = await getDocs(collection(firestore, `users/${userId}/matches`));
 
-      const matchesSnap = await getDocs(collection(firestore, `users/${userId}/matches`));
+        const data = await Promise.all(
+          matchesSnap.docs.map(async (docSnap) => {
+            const matchedUserId = docSnap.id;
+            
+            try {
+              const profileDoc = await getDoc(doc(firestore, `users/${matchedUserId}`));
+              // Get profile data
+              const userData = profileDoc.data();
+              
+              // Extract profile from user data
+              const profile = userData?.profile || {};
+              
+              return {
+                userId: matchedUserId,
+                name: profile.name || 'Unnamed',
+                images: profile.images || [],
+                // Add any other needed fields
+              };
+            } catch (error) {
+              console.error(`Error fetching profile for user ${matchedUserId}:`, error);
+              return null;
+            }
+          })
+        );
 
-      const data = await Promise.all(
-        matchesSnap.docs.map(async (docSnap) => {
-          const matchedUserId = docSnap.id;
-          const profileDoc = await getDoc(doc(firestore, `users/${matchedUserId}`));
-          return {
-            userId: matchedUserId,
-            ...profileDoc.data(),
-          };
-        })
-      );
-
-      setMatches(data.filter(Boolean));
+        const validData = data.filter(Boolean);
+        
+        // Prefetch images for the match list
+        if (validData.length > 0) {
+          const imageUrls = validData
+            .filter(match => match.images && match.images.length > 0)
+            .map(match => match.images[0]);
+            
+          if (imageUrls.length > 0) {
+            Image.prefetch(imageUrls);
+          }
+        }
+        
+        setMatches(validData);
+      } catch (error) {
+        console.error("Error fetching matches:", error);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchMatches();
@@ -45,7 +83,12 @@ export default function Messages() {
       <View style={styles.container}>
         <Text style={styles.heading}>Your Matches</Text>
 
-        {matches.length === 0 ? (
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="white" />
+            <Text style={styles.subtitle}>Loading your matches...</Text>
+          </View>
+        ) : matches.length === 0 ? (
           <Text style={styles.subtitle}>Start chatting with your matches!</Text>
         ) : (
           <FlatList
@@ -54,11 +97,16 @@ export default function Messages() {
             renderItem={({ item }) => (
               <TouchableOpacity style={styles.card} onPress={() => openChat(item.userId)}>
                 <Image
-                  source={{ uri: item.profile?.imageUrl }}
-                  style={styles.avatar}
+                  source={{ 
+                    uri: item.images && item.images.length > 0 ? item.images[0] : null
+                  }}
+                  placeholder={blurhash}
                   contentFit="cover"
+                  transition={300}
+                  cachePolicy="memory-disk"
+                  style={styles.avatar}
                 />
-                <Text style={styles.name}>{item.profile?.name || 'Unnamed'}</Text>
+                <Text style={styles.name}>{item.name || 'Unnamed'}</Text>
               </TouchableOpacity>
             )}
           />
@@ -102,4 +150,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: 'white',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
 });
