@@ -72,7 +72,8 @@ export default function ItineraryScreen() {
     try {
       setLoading(true);
       setError(null);
-      const data = await generateItinerary(locationData, groupSize, budget, userHobbies);
+      // Pass locationData directly to use activityPreferences if they exist
+      const data = await generateItinerary(locationData, groupSize, budget);
       if (!data || data.length === 0) throw new Error("No itinerary available for this location.");
       setItinerary(data);
     } catch (err) {
@@ -91,7 +92,7 @@ export default function ItineraryScreen() {
       let newItinerary;
       while (attempts < 3) {
         attempts++;
-        newItinerary = await generateItinerary(locationData, groupSize, budget, userHobbies);
+        newItinerary = await generateItinerary(locationData, groupSize, budget);
         if (!newItinerary || newItinerary.length === 0) throw new Error("No itinerary available.");
         const newIds = newItinerary.map(item => item.id || `${item.time}-${item.title}`);
         const different = newIds.filter(id => !currentIds.includes(id)).length;
@@ -108,25 +109,127 @@ export default function ItineraryScreen() {
   const saveItineraryToFirebase = async () => {
     try {
       setSavingItinerary(true);
+      
+      // Check user authentication
       const user = getAuth().currentUser;
-      if (!user) throw new Error("You must be logged in to save an itinerary");
+      if (!user) {
+        throw new Error("You must be logged in to save an itinerary");
+      }
+      
+      // Validate required data
+      if (!location) {
+        throw new Error("Location data is missing");
+      }
+      
+      if (!itinerary || itinerary.length === 0) {
+        throw new Error("No activities to save in itinerary");
+      }
+      
       const userId = user.uid;
       const sanitizedName = location.replace(/[^a-zA-Z0-9]/g, "_");
       const itineraryId = tripId || `${sanitizedName}_${Date.now()}`;
+      
+      // Clean up the itinerary data to ensure no undefined values
+      const cleanedItinerary = itinerary.map(activity => {
+        const cleanActivity = {};
+        
+        // Process each key in the activity object
+        Object.keys(activity).forEach(key => {
+          // Skip undefined values
+          if (activity[key] !== undefined) {
+            cleanActivity[key] = activity[key];
+          } else {
+            // Replace undefined with appropriate default value
+            switch (key) {
+              case 'photos':
+                cleanActivity[key] = [];
+                break;
+              case 'rating':
+              case 'num_reviews':
+                cleanActivity[key] = 0;
+                break;
+              case 'price':
+                cleanActivity[key] = 'N/A';
+                break;
+              default:
+                cleanActivity[key] = null;
+            }
+          }
+        });
+        
+        return cleanActivity;
+      });
+      
+      // Clean location data
+      const cleanLocationData = {};
+      if (locationData) {
+        Object.keys(locationData).forEach(key => {
+          if (locationData[key] !== undefined) {
+            cleanLocationData[key] = locationData[key];
+          }
+        });
+      }
+      
+      console.log(`Saving itinerary for ${location} with ${cleanedItinerary.length} activities`);
+      
       const itineraryData = {
-        location: locationData,
+        location: cleanLocationData,
         name: location,
-        activities: itinerary,
+        activities: cleanedItinerary,
         createdAt: new Date().toISOString(),
-        groupSize,
-        budget,
+        groupSize: Number(groupSize) || 1,
+        budget: budget || "$",
       };
-      await setDoc(doc(firestore, `users/${userId}/trips`, itineraryId), itineraryData);
-      Alert.alert("Success", `Trip to ${location} saved!`, [
-        { text: "OK", onPress: () => router.push("/(tabs)/trips") }
-      ]);
+      
+      // Reference to document
+      const docRef = doc(firestore, `users/${userId}/trips`, itineraryId);
+      
+      // Save to Firestore
+      await setDoc(docRef, itineraryData);
+      console.log("Itinerary saved successfully with ID:", itineraryId);
+      
+      Alert.alert(
+        "Success", 
+        `Trip to ${location} saved!`, 
+        [
+          { 
+            text: "OK", 
+            onPress: () => router.push("/(tabs)/trips") 
+          }
+        ]
+      );
     } catch (error) {
-      Alert.alert("Error", error.message);
+      console.error("Error saving itinerary:", error);
+      
+      // Create a user-friendly error message
+      let errorMessage = "Failed to save your itinerary.";
+      
+      if (error.message) {
+        if (error.message.includes("permission-denied") || error.message.includes("Permission denied")) {
+          errorMessage = "You don't have permission to save this itinerary. Please sign in again.";
+        } else if (error.message.includes("network")) {
+          errorMessage = "Network error. Please check your internet connection and try again.";
+        } else if (error.message.includes("quota")) {
+          errorMessage = "Server busy. Please try again later.";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      Alert.alert(
+        "Error", 
+        errorMessage,
+        [
+          {
+            text: "Try Again",
+            onPress: () => saveItineraryToFirebase()
+          },
+          {
+            text: "Cancel",
+            style: "cancel"
+          }
+        ]
+      );
     } finally {
       setSavingItinerary(false);
     }
