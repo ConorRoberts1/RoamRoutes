@@ -26,8 +26,8 @@ Built with React Native and Expo, RoamRoutes provides a seamless mobile experien
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/ConorRoberts1/RoamRoutesProject.git
-cd RoamRoutesProject/frontend
+git clone https://github.com/ConorRoberts1/RoamRoutes.git
+cd RoamRoutes/frontend
 ```
 
 2. Install dependencies:
