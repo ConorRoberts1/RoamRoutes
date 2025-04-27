@@ -14,6 +14,7 @@ export default function ProfileCreation() {
   const [name, setName] = useState("");
   const [images, setImages] = useState([]);
   const [age, setAge] = useState("");
+  const [gender, setGender] = useState(""); // Added gender state
   const [selectedHobbies, setSelectedHobbies] = useState([]);
   const [ageRange, setAgeRange] = useState([18, 35]); // [minAge, maxAge]
   const [genderPreference, setGenderPreference] = useState([]);
@@ -31,7 +32,7 @@ export default function ProfileCreation() {
     "Mountain Climbing", "Festivals", "Markets", "Solo Travel", "Group Tours", "Backpacking"
   ];
   
-  const genderOptions = ["Male", "Female", "Non-binary", "Other"];
+  const genderOptions = ["Male", "Female", "Other"];
   const languageOptions = ["English", "Spanish", "French", "German", "Mandarin", "Japanese", "Italian", "Portuguese", "Arabic", "Russian"];
 
   // Fetch existing profile data if editing
@@ -53,6 +54,7 @@ export default function ProfileCreation() {
           setName(profile.name || "");
           setImages(profile.images || []);
           setAge(profile.age ? profile.age.toString() : "");
+          setGender(profile.gender || ""); // Set existing gender
           setSelectedHobbies(profile.hobbies || []);
           setAgeRange(profile.ageRange || [18, 35]);
           setGenderPreference(profile.genderPreference || []);
@@ -111,6 +113,11 @@ export default function ProfileCreation() {
       Alert.alert("Error", "You must be 18 or older to create a profile.");
       return;
     }
+    
+    if (!gender) {
+      Alert.alert("Error", "Please select your gender.");
+      return;
+    }
 
     setIsLoading(true);
 
@@ -134,6 +141,7 @@ export default function ProfileCreation() {
       await saveProfile({
         name: name.trim(),
         age: parseInt(age),
+        gender, // Save gender
         images: imageUrls,
         hobbies: selectedHobbies,
         ageRange,
@@ -246,6 +254,33 @@ export default function ProfileCreation() {
             placeholderTextColor="gray"
             keyboardType="numeric"
           />
+        </Animatable.View>
+
+        {/* Added Gender Selection */}
+        <Animatable.View animation="fadeIn" delay={450} duration={800}>
+          <Text style={styles.subtitle}>Gender</Text>
+          <Text style={styles.note}>Select one</Text>
+          <View style={styles.bubbleContainer}>
+            {genderOptions.map((option) => (
+              <TouchableOpacity
+                key={option}
+                style={[
+                  styles.bubble,
+                  gender === option && styles.selectedBubble,
+                ]}
+                onPress={() => setGender(option)}
+              >
+                <Text 
+                  style={[
+                    styles.bubbleText,
+                    gender === option && styles.selectedBubbleText
+                  ]}
+                >
+                  {option}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </Animatable.View>
 
         <Animatable.View animation="fadeIn" delay={500} duration={800}>
@@ -492,40 +527,39 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     marginBottom: 20,
-    marginTop: 5,
   },
   bubble: {
     paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     borderRadius: 20,
-    backgroundColor: "white",
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
     margin: 5,
     borderWidth: 1,
     borderColor: "#ccc",
   },
   selectedBubble: {
-    backgroundColor: "black",
-    borderColor: "black",
+    backgroundColor: "#CBC3E3",
+    borderColor: "#9370DB",
   },
   bubbleText: {
+    fontSize: 14,
     color: "#333",
-    fontWeight: "500",
   },
   selectedBubbleText: {
-    color: "white",
+    fontWeight: "bold",
+    color: "#4A0082",
   },
   sliderContainer: {
-    marginBottom: 20,
-    marginTop: 10,
+    marginVertical: 15,
   },
   sliderLabelContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 5,
+    marginBottom: 10,
   },
   sliderLabel: {
+    color: "black",
     fontSize: 16,
-    color: "#333",
   },
   slider: {
     width: "100%",
