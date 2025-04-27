@@ -6,7 +6,7 @@ import { doc, setDoc } from "firebase/firestore";
 import { firestore } from "../../config/firebaseConfig";
 
 export default function Spending() {
-  const router = useRouter(); // Add this line
+  const router = useRouter(); 
   const { tripId, locationData: locationDataString } = useLocalSearchParams();
   const locationData = JSON.parse(locationDataString);
 
@@ -24,15 +24,15 @@ export default function Spending() {
       "$$": { min: 21, max: 50 },
       "$$$": { min: 51, max: 100 },
     };
-
+  
     const spendingThreshold = spendingMap[amount];
-
+  
     const updatedLocationData = {
       ...locationData,
       spending: amount,
       spendingRange: spendingThreshold,
     };
-
+  
     try {
       // Use the tripId directly instead of user path
       const locationDocRef = doc(
@@ -41,13 +41,12 @@ export default function Spending() {
         locationData.place_id
       );
       await setDoc(locationDocRef, updatedLocationData, { merge: true });
-
+  
       console.log("Spending saved successfully:", updatedLocationData);
-      Alert.alert("Success", "Spending saved successfully!");
-
-      // Navigate to the Group Size page
+  
+      
       router.push({
-        pathname: "/tripCreation/groupSize",
+        pathname: "/tripCreation/activityHelper",
         params: { tripId, locationData: JSON.stringify(updatedLocationData) },
       });
     } catch (error) {

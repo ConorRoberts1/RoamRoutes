@@ -17,7 +17,7 @@ export default function searchFill() {
       Alert.alert("Error", "No details available for the selected location.");
       return;
     }
-
+  
     const locationData = {
       place_id: data.place_id,
       name: data.structured_formatting.main_text || "",
@@ -27,27 +27,25 @@ export default function searchFill() {
       rating: details.rating || 0,
       user_ratings_total: details.user_ratings_total || 0,
       types: details.types || [],
+      spendingRange: { min: 0, max: 20 }, // Default spending range (adjust as needed)
     };
-
+  
     try {
       const tripId = `trip_${Date.now()}`;
       await createTrip(tripId, `My Trip to ${locationData.name}`);
       await addLocationToTrip(tripId, locationData);
-
-      // Pass stringified location data
+  
+      // Pass locationData properly as JSON string
       router.push({
         pathname: "/tripCreation/spending",
-        params: { 
-          tripId, 
-          locationData: JSON.stringify(locationData)
-        }
+        params: { tripId, locationData: JSON.stringify(locationData) },
       });
     } catch (error) {
       console.log("Error saving location:", error.message);
       Alert.alert("Error", error.message);
     }
   };
-
+  
   return (
     <BackgroundGradient>
       <View style={styles.container}>
