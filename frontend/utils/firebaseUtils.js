@@ -74,7 +74,7 @@ export const saveProfile = async (profileData) => {
 };
 
 // Create a New Trip
-export const createTrip = async (tripName) => {
+export const createTrip = async (tripId, tripName) => {
   const auth = getAuth();
   const user = auth.currentUser;
 
@@ -84,18 +84,45 @@ export const createTrip = async (tripName) => {
   }
 
   const userId = user.uid;
-  const tripId = `trip_${Date.now()}`;
+  // If a tripId is not provided, create one based on the name
+  const actualTripId = tripId || `${tripName.replace(/[^a-zA-Z0-9]/g, "_")}_${Date.now()}`;
 
   try {
-    const tripDocRef = doc(firestore, `users/${userId}/trips`, tripId);
+    const tripDocRef = doc(firestore, `users/${userId}/trips`, actualTripId);
     await setDoc(tripDocRef, {
       name: tripName,
       createdAt: new Date().toISOString(),
     });
     console.log("Trip document created successfully");
-    return tripId; // Return tripId for further use
+    return actualTripId; // Return tripId for further use
   } catch (error) {
     console.error("Error creating trip document:", error.message);
+  }
+};
+
+// Get Profile Data
+export const getProfile = async (userId = null) => {
+  const auth = getAuth();
+  const user = userId ? { uid: userId } : auth.currentUser;
+
+  if (!user) {
+    console.error("User not logged in!");
+    return null;
+  }
+
+  try {
+    const userDocRef = doc(firestore, "users", user.uid);
+    const userDoc = await getDoc(userDocRef);
+
+    if (userDoc.exists() && userDoc.data().profile) {
+      return userDoc.data().profile;
+    } else {
+      console.log("No profile found for user:", user.uid);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching profile:", error.message);
+    throw error;
   }
 };
 
