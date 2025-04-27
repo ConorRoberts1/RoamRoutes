@@ -73,7 +73,7 @@ export default function ItineraryScreen() {
       setLoading(true);
       setError(null);
       // Pass locationData directly to use activityPreferences if they exist
-      const data = await generateItinerary(locationData, groupSize, budget);
+      const data = await generateItinerary(locationData, groupSize, budget, locationData.activityPreferences);
       if (!data || data.length === 0) throw new Error("No itinerary available for this location.");
       setItinerary(data);
     } catch (err) {
@@ -92,7 +92,7 @@ export default function ItineraryScreen() {
       let newItinerary;
       while (attempts < 3) {
         attempts++;
-        newItinerary = await generateItinerary(locationData, groupSize, budget);
+        newItinerary = await generateItinerary(locationData, groupSize, budget, locationData.activityPreferences);
         if (!newItinerary || newItinerary.length === 0) throw new Error("No itinerary available.");
         const newIds = newItinerary.map(item => item.id || `${item.time}-${item.title}`);
         const different = newIds.filter(id => !currentIds.includes(id)).length;
